@@ -2,94 +2,81 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>TalkSmith Echo Training Interface</title>
+  <title>TalkSmith Echo Simulator</title>
   <style>
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: sans-serif;
-      background-color: #f2f2f2;
-    }
-    .header {
-      background-color: #111827;
-      color: white;
-      padding: 1rem 2rem;
-      font-size: 1.5rem;
-    }
-    .container {
-      padding: 2rem;
-      max-width: 1000px;
-      margin: auto;
-    }
-    textarea {
-      width: 100%;
-      height: 200px;
-      margin-top: 1rem;
-      font-family: monospace;
-      font-size: 0.95rem;
-    }
-    button {
-      margin-top: 1rem;
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      background-color: #2563eb;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    #log-status {
-      margin-top: 1rem;
-      font-weight: bold;
-    }
-    iframe {
-      width: 100%;
-      height: 600px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-    }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 2rem; background: #f7f7f7; }
+    h1 { color: #1f2937; }
+    textarea, input { width: 100%; padding: 0.75rem; margin-top: 0.5rem; font-size: 1rem; }
+    button { padding: 0.75rem 1.5rem; font-size: 1rem; margin-top: 1rem; background: #2563eb; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    #response, #log-result { margin-top: 1rem; padding: 1rem; background: white; border: 1px solid #ccc; border-radius: 5px; }
   </style>
 </head>
 <body>
-  <div class="header">TalkSmith Echo - AI Training Console</div>
-  <div class="container">
-    <p><strong>Step 1:</strong> Run a training session using the embedded ChatGPT window below.</p>
-    <iframe src="https://chat.openai.com/gpts" title="TalkSmith Echo"></iframe>
+  <h1>TalkSmith Echo Training Simulator</h1>
+  <label for="prompt">Enter training scenario or prompt:</label>
+  <textarea id="prompt" rows="6" placeholder="e.g., Handle an objection about pricing for life insurance."></textarea>
+  <button onclick="runSession()">Run Simulation</button>
 
-    <p><strong>Step 2:</strong> Once the session completes and ChatGPT outputs a JSON summary, paste it below:</p>
-    <textarea id="jsonBlock" placeholder="Paste the session summary JSON here..."></textarea>
-
-    <button onclick="submitSession()">Log Training Session</button>
-    <div id="log-status"></div>
-  </div>
+  <div id="response"></div>
+  <div id="log-result"></div>
 
   <script>
-    async function submitSession() {
-      const input = document.getElementById('jsonBlock').value;
-      let json;
-      try {
-        json = JSON.parse(input);
-      } catch (e) {
-        document.getElementById('log-status').textContent = '❌ Invalid JSON';
-        return;
-      }
+    async function runSession() {
+      const prompt = document.getElementById('prompt').value;
+      const responseDiv = document.getElementById('response');
+      const logResult = document.getElementById('log-result');
+      responseDiv.textContent = '⏳ Running simulation...';
+      logResult.textContent = '';
 
-      const endpoint = 'https://9d82b07c-5aa3-4bd7-bf3c-0c26b64e6d10-00-1y40invlaof4c.worf.replit.dev/log-session';
+      const openaiKey = 'sk-proj-REDACTED';
+      const gptEndpoint = 'https://api.openai.com/v1/chat/completions';
+      const loggerEndpoint = 'https://9d82b07c-5aa3-4bd7-bf3c-0c26b64e6d10-00-1y40invlaof4c.worf.replit.dev/log-session';
+
+      const payload = {
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: "You are a training simulator for new insurance agents. Respond to the prompt as a realistic client scenario. After simulating, provide a JSON summary including: trainee, session_id, module, simulation_type, score, status, feedback, critical_error, evaluator." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.7
+      };
 
       try {
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(json),
+        const chatRes = await fetch(gptEndpoint, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${openaiKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
         });
-        const result = await res.text();
-        if (res.ok) {
-          document.getElementById('log-status').textContent = '✅ Session successfully logged to Google Sheets!';
+        const chatData = await chatRes.json();
+        const reply = chatData.choices[0].message.content;
+        responseDiv.textContent = reply;
+
+        // Extract JSON from reply
+        const jsonMatch = reply.match(/{[\s\S]*}/);
+        if (!jsonMatch) {
+          logResult.textContent = "⚠️ Could not detect JSON summary in GPT output.";
+          return;
+        }
+
+        const jsonBlock = JSON.parse(jsonMatch[0]);
+
+        // Send to logger
+        const logRes = await fetch(loggerEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(jsonBlock)
+        });
+
+        if (logRes.ok) {
+          logResult.textContent = "✅ Session logged successfully.";
         } else {
-          document.getElementById('log-status').textContent = '❌ Failed to log session.';
+          logResult.textContent = "❌ Logging failed.";
         }
       } catch (err) {
-        document.getElementById('log-status').textContent = '❌ Network or server error.';
+        responseDiv.textContent = "❌ Error: " + err.message;
       }
     }
   </script>
